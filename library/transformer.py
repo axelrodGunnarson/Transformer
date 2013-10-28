@@ -1,3 +1,7 @@
+'''
+Core of Transformer: here is where deobfuscation happens, splitting is executed and evalhook is called
+@author: Maurizio Abba
+'''
 import re
 import sys
 import pexpect
@@ -6,12 +10,14 @@ import os
 from collections import defaultdict
 import base64
 
+#timeout for evalhook (sometimes it get stuck, we want to terminate anyway)
 TIMEOUT = 45
 
+#if there is any variable inside the script which is dependant by one of the following, don't decode it (it means that the script does runtime code execution, not deobfuscation)
 arrPHPGlobVars = ['$HTTP_GET_VARS', '$_GET', '$_SERVER', '$_POST', '$_FILES', '$_COOKIE', '$_SESSION', '$_REQUEST', '$_ENV', '$HTTP_RAW_POST_DATA', '$argc', '$argv']
 
 
-DEBUG=True
+DEBUG=False
 
 def deobfuscatePHP(FILE):
     """take as input the name of a file and try to deobfuscate it using evalhook.so extension"""
@@ -31,12 +37,14 @@ def deobfuscatePHP(FILE):
         child.sendline('y')
         before = after
         after = decoded.tell()
-#        #print "Now idx=%d" % after
+        if DEBUG:
+            print "Now idx=%d" % after
         rounds += 1
     else:
         if after == 0:
             after = decoded.tell()
-    #print "DBG before: %d, after: %d" % (before, after)
+    if DEBUG:
+        print "DBG before: %d, after: %d" % (before, after)
     try:
         child.close(force=True)
     except:
@@ -67,7 +75,8 @@ def deobfuscatePHP(FILE):
             elif step == 1:
                 start += len(line) + 1
                 if line.strip() == '----':
- #                   #print "start at: %s" % last[start:start+40]
+                    if DEBUG:
+                        print "start at: %s" % last[start:start+40]
                     step = 2
                     end = start
             elif step == 2:
@@ -79,7 +88,8 @@ def deobfuscatePHP(FILE):
             elif step == 3:
                 if line.strip() == 'Do you want to allow execution? [y/N]':
                         step = 4
-#                        #print "End at: %s" % last[end-40:end]
+                        if DEBUG:
+                            print "End at: %s" % last[end-40:end]
                         break
                 else:
                     # back to step2
@@ -99,6 +109,7 @@ def deobfuscatePHP(FILE):
 def splitter(orig, prog, noPHP=False):
     """split a file according to the prog regex, and send each part to the deobfuscate"""
     def addVariables (used, t, elem):
+        '''add variables to the piece of code to be obfuscated'''
         listOfVarsToBeAdded=[]
         added=False
         for possible_var in find_prog.finditer(t):
@@ -119,6 +130,7 @@ def splitter(orig, prog, noPHP=False):
 
 
     def validateEvaluation(totText, eval_match, dic):
+        '''check if the evalhook output is actually a deobfuscation of the code or not'''
         if any(var in totText for var in arrPHPGlobVars):
             return False
         for possible_var in find_prog.finditer(eval_match.group(0)):
@@ -160,8 +172,6 @@ def splitter(orig, prog, noPHP=False):
     while found:
         found=False
         elem = prog.search(text, off)
-    #for elem in re.finditer(prog, text):
-#        if not any(var in elem.group(0) for var in arrPHPGlobVars):
         
         if elem:
             found=True
@@ -169,25 +179,20 @@ def splitter(orig, prog, noPHP=False):
             DICT_VARS = defaultdict(list)
             DICT_OF_RAW_DATA = defaultdict(list)
             used=[]
-            #inserted, DICT_VARS, DICT_OF_RAW_DATA = createDicOfVars(DICT_VARS, DICT_RAW_DATA, text)
-            #for key in DICT_VARS:
-            #    for element in DICT_VARS[key]:
-            #        while inserted:
-            #            inserted, DICT_VARS, DICT_OF_RAW_DATA = createDicOfVars(DICT_VARS, DICT_RAW_DATA, DICT_VARS[key]["element"])
             listOfText=[{"offset":0,"text": text}]
             for textVars in listOfText:
                 for m in var_vars.finditer(textVars["text"]):
-                # if not any(var in m.group(0) for var in arrPHPGlobVars):
                     t = {"position": m.start()+textVars["offset"], "end": m.end()+textVars["offset"], "source": m.group(1), "element": m.group(2), "raw_data" : m.group(0)}
                     if t not in DICT_VARS[m.group(1)]:
                         DICT_VARS[m.group(1)].append( t)
                         listOfText.append({"offset": m.start(2), "text": m.group(2)})
                     DICT_OF_RAW_DATA[m.group(1)].append(m.group(0))
             eval_t = elem.group(0)
-            #print text
-            #print "-"*160
-            #print "Matching: %s at %d (pos %d)" %(eval_t, elem.start(),elem.pos)
-            #print "-"*160
+            if DEBUG:
+                print text
+                print "-"*160
+                print "Matching: %s at %d (pos %d)" %(eval_t, elem.start(),elem.pos)
+                print "-"*160
 
             t = eval_t[:]
             #look if inside the eval thing there is a variable
@@ -196,23 +201,25 @@ def splitter(orig, prog, noPHP=False):
             while edited:
                 used, textOfVars, edited = addVariables(used, textOfVars, elem)            
             used.sort(key=lambda dic: dic["position"])
-            #for i in used:
-            #    print used
+            if DEBUG:
+                for i in used:
+                    print used
             for ins in reversed(used):
                 st= ins["raw_data"]
                 if st[-1]!=";": st+=";"
                 t = st+"\n"+t
             t = "<?php\n" + t + "\n?>"
-            #for ev in DICT_VARS["$eval"]:
-            #    print ev["position"]
-            #print "\n"+str(len(used))+"\n"
-            #print "\n"*10
-            #print t
-            #for el in DICT_VARS:
-            #    print DICT_VARS[el]
-            #print "\n"*10
-            #print "Evaluation is"
-            #print t
+            if DEBUG:
+                for ev in DICT_VARS["$eval"]:
+                    print ev["position"]
+                print "\n"+str(len(used))+"\n"
+                print "\n"*10
+                print t
+                for el in DICT_VARS:
+                    print DICT_VARS[el]
+                print "\n"*10
+                print "Evaluation is"
+                print t
             if validateEvaluation(t, elem, DICT_VARS): 
         #       this should be a temporary file
                 tf = open(tfname, "w")    
@@ -227,29 +234,32 @@ def splitter(orig, prog, noPHP=False):
                     if sub[0] == '\r' or sub[0] == '\n':
                         sub = sub[2:]
                     if sub != t:
-                        #print "Done! start from: " + str(elem.start()) + " to: " + str(elem.end())
-                        #print eval_t
-                        #print "will change in"
-                        #print repr(sub)
-                        #print "Size of changement: Before " + str(sys.getsizeof(eval_t)), "After: " + str(sys.getsizeof(sub))
+                        if DEBUG:
+                            print "Done! start from: " + str(elem.start()) + " to: " + str(elem.end())
+                            print eval_t
+                            print "will change in"
+                            print repr(sub)
+                            print "Size of changement: Before " + str(sys.getsizeof(eval_t)), "After: " + str(sys.getsizeof(sub))
                         result = True
                         text = text.replace(eval_t, sub, 1)
                         usedTot+=used
                     else:
-                        pass
-                        #print "REFUSED because equals"
+                        if DEBUG:
+                            print "REFUSED because equals"
                 else:
-                    pass
-                    #print "NO GOOD!"
-                #print text
+                    if DEBUG:
+                        print "NO GOOD!"
+                if DEBUG:
+                    print text
             else:
-                pass
-                #print t
-                #print "not passed the test"
-            #print "\n"*10
-            #print "Complete text is"
-            #print text
-        #raw_input("press any key to continue    ")
+                if DEBUG:
+                    print t
+                    print "not passed the test"
+            if DEBUG:
+                print "\n"*10
+                print "Complete text is"
+                print text
+                raw_input("press any key to continue    ")
     os.remove(tfname)
     return text, result, err, usedTot
 
@@ -263,22 +273,26 @@ def general_deobfuscate(filename):
     fd.close()
     toBeRemoved=[]
     while result:
-        #print "testing regex1"
+        if DEBUG:
+            print "testing regex1"
         text, result1, err1, used = splitter(text, regex_preg_replace1)
         if result1:
             count+=1
             toBeRemoved+=used
-        #print "testing regex2"
+        if DEBUG:
+            print "testing regex2"
         text, result1b, err1b, used = splitter(text, regex_preg_replace2)
         if result1b:
             count+=1
             toBeRemoved+=used
-        #print "testing eval1"
+        if DEBUG:
+            print "testing eval1"
         text, result2, err2, used = splitter(text, regex_eval1)
         if result2:
             count+=1
             toBeRemoved+=used
-        #print "testing eval2"
+        if DEBUG:
+            print "testing eval2"
         text, result2b, err2b, used = splitter(text, regex_eval2)
         if result2b:
             count+=1
@@ -290,11 +304,6 @@ def general_deobfuscate(filename):
         text = text.replace(elem["raw_data"], '')
     return text, count, err
 
-#var_string = re.compile(r'(\$[\w-]+)[ \t\n]*\=[ \t\n]*([^\=]*?;)', re.DOTALL)
-#var_string1 = re.compile(r"(\$[\w-]+)[ \r\t\n]*\=([^\=]?[ \r\t\n]*?'.*?')", re.DOTALL)
-#var_string2 = re.compile(r'(\$[\w-]+)[ \r\t\n]*\=([^\=]?[ \r\t\n]*?".*?")', re.DOTALL)
-#var_nums = re.compile(r"(\$[\w-]+)[ \r\t\n]*\=[ \r\t\n]?(\d+?;)", re.DOTALL)
-#var_ops = re.compile (r"(\$[\w-]+)[ \r\t\n]*\=[ \t\r\n]?([\w]+.*?;)", re.DOTALL)
 var_vars = re.compile (r"(\$[\w-]+)[ \r\t\n]*[\+\-\*\.]?\=([^\=].*?;)", re.DOTALL)
 find_prog = re.compile(r'\$[\w-]+')
 regex_preg_replace1 = re.compile(r'[@]?preg_replace[^;,]*e.*?;',re.DOTALL)
@@ -312,8 +321,7 @@ if __name__ == "__main__":
         try:
             f = open(el)
         except IOError as err:
-            print "PANIC!"
-            print err
+            print "PANIC! filr %s does not exist" %(el)
         else:
             seg = f.read()
             print "Before:", el, "size: ", str(sys.getsizeof(seg))

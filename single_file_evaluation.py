@@ -2,6 +2,7 @@
 '''
 testing script for launching deobfuscation of the file. In addition, it removes unicode null characters, empty php tags and additional blanklines caused by the deobfuscation.
 It prints a json objects
+@author: Maurizio Abba
 '''
 
 import library.transformer as transformer
@@ -16,8 +17,7 @@ if len(sys.argv)!=2:
 try:
     f = open(sys.argv[1])
 except IOError as err:
-    print "PANIC!"
-    print err
+    print "PANIC! file %s does not exist" %(sys.argv[1])
     sys.exit(1)
 
 #print os.geteuid()
