@@ -1,0 +1,20 @@
+<p dir=ltr>
+During my job I had to deal woth tons of malicious php files per day, let's say about 1000. Most of the files are obfuscated in various ways, from the usage of php-crypt.com up to amateur obfuscation.
+Now, if you have to deal with deobfuscation of a single php file you have several opportunities, from web services (like <a href="https://www.whitefirdesign.com/tools/deobfuscate-php-hack-code.html">this</a>) to the great php extension created from Stefan Esser evalhook (here is a <a href="http://php-security.org/2010/05/13/article-decoding-a-user-space-encoded-php-script/">link</a> of explanation). These strategies are all good if you have a single file, as all of them require user interaction.
+In PHP we basically have two ways of deobfuscating a file and then execute it:
+ - simple eval function;
+  - preg_replace with "e" (dear PHP developers, was that really necessary!? a preg_replace with included eval!?);
+
+  The main problems for using Evalhook extension over a big number of files are of two categories:
+   - Evalhook for every "eval" step asks for confirmation of evaluating the code(and that's ok, we can easily automatize a yes answer);
+    - The file is actually executed while is analysed (and that's not ok at all!)
+
+    So what I basically wanted was a way to use Evalhook in an automatic way, in order to let it run over my 1000 files per day, but at the same time I didn't want to execute any part of the code other than the strict necessary for evalhook to do the job.
+
+    <div class="separator" style="clear: both; text-align: center;"><a href="http://4.bp.blogspot.com/-T1YSRyegDs0/Um46Y1hsX2I/AAAAAAAAA-Q/sgA0FGmN3p4/s1600/Screen+Shot+2013-10-28+at+11.19.38+AM.jpg" imageanchor="1" style="margin-left: 1em; margin-right: 1em;"><img border="0" src="http://4.bp.blogspot.com/-T1YSRyegDs0/Um46Y1hsX2I/AAAAAAAAA-Q/sgA0FGmN3p4/s320/Screen+Shot+2013-10-28+at+11.19.38+AM.jpg" /></a></div>
+
+    This is especially important when we are dealing with files created by one author and then used by several others. Most of the web shells I have, in fact, contains a tiny base64 string which is evaluated at run time and which is in charge of sending an e-mail to the creator of the shell (not the one who is actually using it) letting him know that his shell has been uploaded to a certain server. If we run this kind of files with evalhook, and letting him deobfuscating everything, in fact, it will blindly execute all the code up to the point when it reaches the obfuscated part, provoking any sort of damage to the testing machine.
+
+    That's why I created Transformers. The principle of Transformers is exactly the one from above: it explores the code, look for all eval/preg_replace with "e" present, isolate them, run evalhook over these single pieces and put these pieces back inside the code, allowing for a safer deobfuscation.
+    This behaviour is iterated over the file up to the point where no eval strings are found, allowing for deobfuscation of strange amateur obfuscation technique (ex: obfuscating the whole file not as a single entity but as several ones glued together, where each pieces is connected after some obfuscation rounds to each other).
+
